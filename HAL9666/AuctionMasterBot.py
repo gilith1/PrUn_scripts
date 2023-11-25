@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from typing import Any, Iterable
 import discord
 from discord.ext import commands
 
@@ -27,8 +28,8 @@ CachedSellersData = {}
 FioInventoryUrl = "https://rest.fnar.net/csv/inventory?group={group}&apikey={apikey}"
 FioInventoryShipyardGroup = "41707164"
 FioInventoryEv1lGroup = "83373923"
-CachedShipyardInventories = {}
-CachedEv1lInventories = {}
+CachedShipyardInventories: dict[str, dict[str, int]] = {}
+CachedEv1lInventories: dict[str, dict[str, int]] = {}
 ShipPartTickers = (
     "BR1",
     "BR2",  #bridges
@@ -468,7 +469,7 @@ async def help(ctx):
   await ctx.send("$status\nShows current auction status")
 
 
-async def findInInventories(ctx, ticker):
+async def findInInventories(ctx: Any, ticker: str)->list[tuple[str, int]]:
   global CachedShipyardInventories
   global CachedEv1lInventories
   isShipPartTicker = ticker in ShipPartTickers
@@ -476,7 +477,7 @@ async def findInInventories(ctx, ticker):
       apikey=os.getenv("FIO_API_KEY"),
       group=(FioInventoryShipyardGroup
              if isShipPartTicker else FioInventoryEv1lGroup))
-  inventories = {}
+  inventories: dict[str, dict[str, int]] = {}
   response = requests.get(fioUrl)
   if response.status_code != 200:
     await ctx.reply(
@@ -496,19 +497,19 @@ async def findInInventories(ctx, ticker):
       CachedShipyardInventories = inventories
     else:
       CachedEv1lInventories = inventories
-  result = []
+  result: list[tuple[str, int]] = []
   for (user, inv) in inventories.items():
     if ticker in inv:
       result.append((user, inv[ticker]))
   return sorted(result, key=lambda x: x[1])[::-1]
 
 
-def getSellers(ticker):
+def getSellers(ticker: str) -> list[str]:
   global CachedSellersData
-  result = []
+  result: list[str] = []
   response = requests.get(OfferingsCsvUrl)
   if response.status_code == 200:
-    CachedSellersData = csv.DictReader(response.text.split("\r\n"))
+    CachedSellersData: Iterable[dict[str, str]] = csv.DictReader(response.text.split("\r\n"))
   if CachedSellersData:
     result = [
         row["Seller"].upper() for row in CachedSellersData
@@ -560,4 +561,5 @@ async def clearchannel(ctx):
 
 
 #keep_alive()
-bot.run(os.getenv('DISCORD_TOKEN'))
+if __name__ == "__main__":
+  bot.run(os.getenv('DISCORD_TOKEN'))
