@@ -486,11 +486,17 @@ async def updateInventory(groupId: str, inventory: dict[str, dict[str,int]]):
       inventory[row["Username"]][row["Ticker"]] = 0
     inventory[row["Username"]][row["Ticker"]] += int(row["Amount"])
 
-async def findInInventory(ticker: str, inventory: dict[str, dict[str,int]])->list[tuple[str, int]]:
+async def findInInventory(ticker: str, inventory: dict[str, dict[str,int]], shouldReturnAll: bool = False)->list[tuple[str, int]]:
   result: list[tuple[str, int]] = []
   for (user, inv) in inventory.items():
     if ticker in inv:
       result.append((user, inv[ticker]))
+
+  if not shouldReturnAll:
+    sellers = getSellers(ticker)
+    print("Sellers:", str(sellers))
+    result = [(u, a) for (u, a) in result if u in sellers]
+
   return sorted(result, key=lambda x: x[1])[::-1]
 
 
@@ -507,7 +513,7 @@ def getSellers(ticker: str) -> list[str]:
     ]
   return result
 
-async def whohas(ctx: Any, ticker: str, shouldReturnAll: bool) -> list[tuple[str, int]]:
+async def whohas(ctx: Any, ticker: str, shouldReturnAll: bool = False) -> list[tuple[str, int]]:
   
   Log.info("whohas", ticker)
 
@@ -525,13 +531,9 @@ async def whohas(ctx: Any, ticker: str, shouldReturnAll: bool) -> list[tuple[str
         "Error updating inventory from FIO. Falling back to cached data"
     )
   
-  result = await findInInventory(ticker, inventory)
+  result = await findInInventory(ticker, inventory, shouldReturnAll)
   #print(str(result))
   print("Full:", str(result))
-  if not shouldReturnAll:
-    sellers = getSellers(ticker)
-    print("Sellers:", str(sellers))
-    result = [(u, a) for (u, a) in result if u in sellers]
 
   return result
 
