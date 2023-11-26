@@ -23,7 +23,7 @@ ShortenHoursToMinutes = False
 
 #corp spreadsheet exported as CSV
 OfferingsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTU0PDYV0CYk5LObZAFcxIXZNshT27WHvy1CZNmm8paC7eMVmTlCk3rxIFyEY6Tbiz0uiIDG8CxGuCm/pub?gid=0&single=true&output=csv"
-CachedSellersData = {}
+CachedSellersData:  Iterable[dict[str, str]] = {}
 
 FioInventoryUrl = "https://rest.fnar.net/csv/inventory?group={group}&apikey={apikey}"
 FioInventoryShipyardGroup = "41707164"
@@ -468,37 +468,27 @@ async def help(ctx):
       "$bid [price]\nPlaces a new bid. Examples:\n$bid 4mil\nbid 4.25mil\n")
   await ctx.send("$status\nShows current auction status")
 
-
-async def findInInventories(ctx: Any, ticker: str)->list[tuple[str, int]]:
-  global CachedShipyardInventories
-  global CachedEv1lInventories
-  isShipPartTicker = ticker in ShipPartTickers
+async def updateInventory(groupId: str, inventory: dict[str, dict[str,int]]):
   fioUrl = FioInventoryUrl.format(
       apikey=os.getenv("FIO_API_KEY"),
-      group=(FioInventoryShipyardGroup
-             if isShipPartTicker else FioInventoryEv1lGroup))
-  inventories: dict[str, dict[str, int]] = {}
+      group=groupId)
   response = requests.get(fioUrl)
   if response.status_code != 200:
-    await ctx.reply(
-        "Error fetching inventory from FIO. status: {status}. Falling back to cached data"
-        .format(status=response.status_code))
-    inventories = CachedShipyardInventories if isShipPartTicker else CachedEv1lInventories
-  else:
-    csvData = csv.DictReader(response.text.split("\r\n"))
+    raise Exception(f"Failed to update inventory for groupId {groupId}")
 
-    for row in csvData:
-      if row["Username"] not in inventories:
-        inventories[row["Username"]] = {}
-      if row["Ticker"] not in inventories[row["Username"]]:
-        inventories[row["Username"]][row["Ticker"]] = 0
-      inventories[row["Username"]][row["Ticker"]] += int(row["Amount"])
-    if isShipPartTicker:
-      CachedShipyardInventories = inventories
-    else:
-      CachedEv1lInventories = inventories
+  csvData = csv.DictReader(response.text.split("\r\n"))
+
+  inventory.clear()
+  for row in csvData:
+    if row["Username"] not in inventory:
+      inventory[row["Username"]] = {}
+    if row["Ticker"] not in inventory[row["Username"]]:
+      inventory[row["Username"]][row["Ticker"]] = 0
+    inventory[row["Username"]][row["Ticker"]] += int(row["Amount"])
+
+async def findInInventory(ticker: str, inventory: dict[str, dict[str,int]])->list[tuple[str, int]]:
   result: list[tuple[str, int]] = []
-  for (user, inv) in inventories.items():
+  for (user, inv) in inventory.items():
     if ticker in inv:
       result.append((user, inv[ticker]))
   return sorted(result, key=lambda x: x[1])[::-1]
@@ -509,7 +499,7 @@ def getSellers(ticker: str) -> list[str]:
   result: list[str] = []
   response = requests.get(OfferingsCsvUrl)
   if response.status_code == 200:
-    CachedSellersData: Iterable[dict[str, str]] = csv.DictReader(response.text.split("\r\n"))
+    CachedSellersData = csv.DictReader(response.text.split("\r\n"))
   if CachedSellersData:
     result = [
         row["Seller"].upper() for row in CachedSellersData
@@ -517,10 +507,37 @@ def getSellers(ticker: str) -> list[str]:
     ]
   return result
 
+async def whohas(ctx: Any, ticker: str, shouldReturnAll: bool) -> list[tuple[str, int]]:
+  
+  Log.info("whohas", ticker)
 
-@bot.command()
-async def whohas(ctx, ticker, all=""):
-  shouldReturnAll = all.lower() == "all"
+  # update relevant group inventory
+  global CachedShipyardInventories
+  global CachedEv1lInventories
+  isShipPartTicker = ticker in ShipPartTickers
+
+  group = FioInventoryShipyardGroup if isShipPartTicker else FioInventoryEv1lGroup
+  inventory = CachedShipyardInventories if isShipPartTicker else CachedEv1lInventories
+  try:
+    await updateInventory(groupId=group, inventory=inventory)
+  except Exception:
+    await ctx.reply(
+        "Error updating inventory from FIO. Falling back to cached data"
+    )
+  
+  result = await findInInventory(ticker, inventory)
+  #print(str(result))
+  print("Full:", str(result))
+  if not shouldReturnAll:
+    sellers = getSellers(ticker)
+    print("Sellers:", str(sellers))
+    result = [(u, a) for (u, a) in result if u in sellers]
+
+  return result
+
+
+@bot.command(name="whohas")
+async def whohas_command(ctx: Any, ticker: str, all: str =""):
   if ctx.author == bot.user or ctx.author.bot:
     return
   if ctx.channel.name not in ValidChannels:
@@ -528,27 +545,18 @@ async def whohas(ctx, ticker, all=""):
   if not isPriviledgedRole(ctx.author):
     await ctx.reply("You don't have permissions to run this command!")
     return
-  Log.info("whohas", ticker)
-  result = await findInInventories(ctx, ticker.upper())
-  #print(str(result))
-  print("Full:", str(result))
-  if not shouldReturnAll:
-    sellers = getSellers(ticker.upper())
-    print("Sellers:", str(sellers))
-    result = [(u, a) for (u, a) in result if u in sellers]
+  
+  shouldReturnAll = all.lower() == "all"
+
+  result = await whohas(ctx=ctx, ticker=ticker.upper(), shouldReturnAll=shouldReturnAll)
+
   if len(result) == 0:
-    await ctx.reply(
-        "As far as I know, nobody has {ticker}".format(ticker=ticker))
+    await ctx.reply(f"As far as I know, nobody has {ticker}")
     return
-  formattedResult = [
-      "{user} has {amount} {ticker}".format(user=u,
-                                            amount=a,
-                                            ticker=ticker.upper())
-      for (u, a) in result
-  ]
+  
+  formattedResult = [f"{user} has {amount} {ticker.upper()}" for (user, amount) in result]
   print("Filtered:", str(formattedResult))
   await ctx.reply("\n".join(formattedResult))
-
 
 @bot.command()
 async def clearchannel(ctx):
