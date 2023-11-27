@@ -83,15 +83,6 @@ ShipPartTickers = (
     "SRP"  #anti-radiation plates
 )
 
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
-intents.typing = False
-intents.presences = False
-
-bot = commands.Bot(command_prefix='$', intents=intents)
-bot.remove_command("help")
-
 currentAuction = None
 Log = logging.getLogger(__name__)
 
@@ -468,7 +459,7 @@ async def help(ctx):
       "$bid [price]\nPlaces a new bid. Examples:\n$bid 4mil\nbid 4.25mil\n")
   await ctx.send("$status\nShows current auction status")
 
-async def updateInventory(groupId: str, inventory: dict[str, dict[str,list[tuple[str,int]]]]):
+def updateInventory(groupId: str, inventory: dict[str, dict[str,list[tuple[str,int]]]]):
   fioUrl = FioInventoryUrl.format(
       apikey=os.getenv("FIO_API_KEY"),
       group=groupId)
@@ -486,7 +477,7 @@ async def updateInventory(groupId: str, inventory: dict[str, dict[str,list[tuple
       inventory[row["Username"]][row["Ticker"]] = []
     inventory[row["Username"]][row["Ticker"]].append((row["NaturalId"], int(row["Amount"])))
 
-async def findInInventory(ticker: str, inventory: dict[str, dict[str,list[tuple[str,int]]]], shouldReturnAll: bool = False)->list[tuple[str, int]]:
+def findInInventory(ticker: str, inventory: dict[str, dict[str,list[tuple[str,int]]]], shouldReturnAll: bool = False)->list[tuple[str, int]]:
   result: list[tuple[str, list[tuple[str,int]]]] = []
   # filter for only ticker we want
   for (user, inv) in inventory.items():
@@ -529,7 +520,7 @@ def getSellerData(ticker: str) -> dict[str,list[str]]:
   if CachedSellersData:
     result: dict[str,list[str]] = {}
     for row in CachedSellersData:
-      pos_list = [x for x in row.get("POS", "").split(',') if x != ""]
+      pos_list = [x.strip() for x in row.get("POS", "").split(',') if x != ""]
       if row["MAT"] == ticker:
         result[row['Seller'].upper()] = pos_list
 
@@ -594,4 +585,13 @@ async def clearchannel(ctx):
 
 #keep_alive()
 if __name__ == "__main__":
+  intents = discord.Intents.default()
+  intents.members = True
+  intents.message_content = True
+  intents.typing = False
+  intents.presences = False
+
+  bot = commands.Bot(command_prefix='$', intents=intents)
+  bot.remove_command("help")
+
   bot.run(os.getenv('DISCORD_TOKEN'))

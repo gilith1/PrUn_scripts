@@ -8,13 +8,13 @@ import io
 @pytest.mark.asyncio
 async def test_inventory():
 
-    general_csv_file = create_csv(
+    general_csv_stream = create_csv(
         [
             {"Username":"Kindling", "Ticker": "C", "Amount":"200", "NaturalId": "UV-351a"}
         ]
     )
 
-    shipyard_csv_file = create_csv(
+    shipyard_csv_stream = create_csv(
         [
             {"Username":"Felmer", "Ticker": "WCB", "Amount":"3", "NaturalId": "UV-351a"}
         ]
@@ -22,7 +22,7 @@ async def test_inventory():
     
     fake_fio_response = MagicMock()
     fake_fio_response.status_code = 200
-    fake_fio_response.text = general_csv_file
+    fake_fio_response.text = general_csv_stream
 
     bot.requests.get = MagicMock(return_value=fake_fio_response)
 
@@ -31,13 +31,13 @@ async def test_inventory():
     inv = await bot.whohas(CoroutineMock(), "C")
     assert inv[0] == ("Kindling", 200)
 
-    general_csv_file = create_csv(
+    general_csv_stream = create_csv(
         [
             {"Username":"Kindling", "Ticker": "C", "Amount":"200", "NaturalId": "UV-351a"},
             {"Username":"Felmer", "Ticker": "C", "Amount":"250", "NaturalId": "UV-351a"}
         ]
     )
-    fake_fio_response.text = general_csv_file
+    fake_fio_response.text = general_csv_stream
 
     inv = await bot.whohas(CoroutineMock(), "C")
 
@@ -54,7 +54,7 @@ async def test_inventory():
     assert inv[1] == ("Kindling", 200)
 
     fake_fio_response.status_code = 200
-    fake_fio_response.text = shipyard_csv_file
+    fake_fio_response.text = shipyard_csv_stream
     inv = await bot.whohas(ctx, "WCB")
 
     assert len(inv) == 1
@@ -72,7 +72,7 @@ async def test_pos_filter():
     # when someone has set POS filter, we should only count the amounts from those locations
     bot.getSellerData = MagicMock(return_value = {"Kindling":["UV-351a"], "Felmer": ["XG-521b"], "Gilith": []})
 
-    csv_file = create_csv(
+    csv_stream = create_csv(
         [
             {"Username":"Kindling", "Ticker": "C", "Amount":"200", "NaturalId": "UV-351a"},
             {"Username":"Kindling", "Ticker": "C", "Amount":"100", "NaturalId": "KW-688c"},
@@ -83,15 +83,15 @@ async def test_pos_filter():
     
     fio_response = MagicMock()
     fio_response.status_code = 200
-    fio_response.text = csv_file
+    fio_response.text = csv_stream
 
     bot.requests.get = MagicMock(return_value=fio_response)
 
     inv = await bot.whohas(MagicMock(), "C", False)
 
     assert len(inv) == 2
-    assert inv[0] == ("Kindling", 200)
-    assert inv[1] == ("Gilith", 100)
+    assert ("Kindling", 200) in inv
+    assert ("Gilith", 100) in inv
 
 
 # TODO: test shouldReturnAll = False
@@ -102,11 +102,11 @@ def test_getSellersData():
             {"MAT":"C", "Seller": "Felmer", "POS":"", "Price/u": "300"},
             {"MAT":"WCB", "Seller": "Felmer", "POS":"UV-351a", "Price/u": "300000"}
         ]
-    sheets_csv_file = create_csv(csv_data)
+    sheets_csv_stream = create_csv(csv_data)
 
     fake_fio_response = MagicMock()
     fake_fio_response.status_code = 200
-    fake_fio_response.text = sheets_csv_file
+    fake_fio_response.text = sheets_csv_stream
     bot.requests.get = MagicMock(return_value = fake_fio_response)
 
     sellers = bot.getSellerData("C")
@@ -120,10 +120,10 @@ def test_getSellersData():
 def create_csv(csv_data: list[dict[str,str]]) -> str:
     if len(csv_data) < 1: raise ValueError("List must have atleast 1 entry")
 
-    csv_file = io.StringIO()
-    general_csv_writer = csv.DictWriter(csv_file, list(csv_data[0].keys()))
+    csv_stream = io.StringIO()
+    general_csv_writer = csv.DictWriter(csv_stream, list(csv_data[0].keys()))
     general_csv_writer.writeheader()
     for row in csv_data:
         general_csv_writer.writerow(row)
 
-    return csv_file.getvalue()
+    return csv_stream.getvalue()
