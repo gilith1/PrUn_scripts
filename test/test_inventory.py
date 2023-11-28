@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from asynctest import CoroutineMock
 import pytest
 import csv
@@ -6,7 +6,8 @@ import HAL9666.AuctionMasterBot as bot
 import io
 
 @pytest.mark.asyncio
-async def test_inventory():
+@patch('HAL9666.AuctionMasterBot.getSellerData')
+async def test_inventory(mock_getSellerData):
 
     general_csv_stream = create_csv(
         [
@@ -26,7 +27,7 @@ async def test_inventory():
 
     bot.requests.get = MagicMock(return_value=fake_fio_response)
 
-    bot.getSellerData = MagicMock(return_value = {"Kindling":[], "Felmer": [], "Gilith": []})
+    mock_getSellerData.return_value = {"Kindling":[], "Felmer": [], "Gilith": []}
 
     inv = await bot.whohas(CoroutineMock(), "C")
     assert inv[0] == ("Kindling", 200)
@@ -67,10 +68,11 @@ async def test_inventory():
     assert inv[1] == ("Kindling", 200)
 
 @pytest.mark.asyncio
-async def test_pos_filter():
+@patch('HAL9666.AuctionMasterBot.getSellerData')
+async def test_pos_filter(mock_getSellerData):
 
     # when someone has set POS filter, we should only count the amounts from those locations
-    bot.getSellerData = MagicMock(return_value = {"Kindling":["UV-351a"], "Felmer": ["XG-521b"], "Gilith": []})
+    mock_getSellerData.return_value = {"Kindling":["UV-351a"], "Felmer": ["XG-521b"], "Gilith": []}
 
     csv_stream = create_csv(
         [
