@@ -15,6 +15,14 @@ import requests
 import traceback
 
 #from keep_alive_flask import keep_alive
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+intents.typing = False
+intents.presences = False
+
+bot = commands.Bot(command_prefix='$', intents=intents)
+bot.remove_command("help")
 
 ValidChannels = ("auction", "auction-bot-sandbox")
 #ValidChannels = ("auction-bot-sandbox")
@@ -28,8 +36,8 @@ CachedSellersData:  Iterable[dict[str, str]] = {}
 FioInventoryUrl = "https://rest.fnar.net/csv/inventory?group={group}&apikey={apikey}"
 FioInventoryShipyardGroup = "41707164"
 FioInventoryEv1lGroup = "83373923"
-CachedShipyardInventories: dict[str, dict[str, tuple[str,int]]] = {}
-CachedEv1lInventories: dict[str, dict[str, tuple[str,int]]] = {}
+CachedShipyardInventories: dict[str, dict[str, list[tuple[str,int]]]] = {}
+CachedEv1lInventories: dict[str, dict[str, list[tuple[str,int]]]] = {}
 ShipPartTickers = (
     "BR1",
     "BR2",  #bridges
@@ -538,13 +546,13 @@ async def whohas(ctx: Any, ticker: str, shouldReturnAll: bool = False) -> list[t
   group = FioInventoryShipyardGroup if isShipPartTicker else FioInventoryEv1lGroup
   inventory = CachedShipyardInventories if isShipPartTicker else CachedEv1lInventories
   try:
-    await updateInventory(groupId=group, inventory=inventory)
+    updateInventory(groupId=group, inventory=inventory)
   except Exception as e:
     await ctx.reply(
         "Error updating inventory from FIO. Falling back to cached data"
     )
   
-  result = await findInInventory(ticker, inventory, shouldReturnAll)
+  result = findInInventory(ticker, inventory, shouldReturnAll)
   #print(str(result))
   print("Full:", str(result))
 
@@ -585,13 +593,4 @@ async def clearchannel(ctx):
 
 #keep_alive()
 if __name__ == "__main__":
-  intents = discord.Intents.default()
-  intents.members = True
-  intents.message_content = True
-  intents.typing = False
-  intents.presences = False
-
-  bot = commands.Bot(command_prefix='$', intents=intents)
-  bot.remove_command("help")
-
   bot.run(os.getenv('DISCORD_TOKEN'))
