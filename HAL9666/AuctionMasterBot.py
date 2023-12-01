@@ -11,7 +11,7 @@ from typing import Any
 import discord
 from discord.ext import commands
 
-from HAL9666.lib.inventory import whohas
+from HAL9666.lib.inventory import fetch_inventory_data_periodically, whohas
 
 # from keep_alive_flask import keep_alive
 intents = discord.Intents.default()
@@ -435,7 +435,7 @@ async def help(ctx):
 
 
 @bot.command(name="whohas")
-async def whohas_command(ctx: Any, ticker: str, all: str = ""):
+async def whohas_command(ctx: Any, ticker: str, all: str = "", force: str = ""):
     if ctx.author == bot.user or ctx.author.bot:
         return
     if ctx.channel.name not in ValidChannels:
@@ -445,9 +445,10 @@ async def whohas_command(ctx: Any, ticker: str, all: str = ""):
         return
 
     shouldReturnAll = all.lower() == "all"
+    forceUpdate = force.lower() == "force" or all.lower() == "force" #  force ends up in "all" if "$whohas FE force"
 
     result = await whohas(
-        ctx=ctx, ticker=ticker.upper(), shouldReturnAll=shouldReturnAll
+        ctx=ctx, ticker=ticker.upper(), shouldReturnAll=shouldReturnAll, forceUpdate=forceUpdate
     )
 
     if len(result) == 0:
@@ -471,6 +472,10 @@ async def clearchannel(ctx):
     await ctx.channel.purge()
 
 
+async def main():
+    await fetch_inventory_data_periodically()
+    await bot.start(os.getenv("DISCORD_TOKEN"))
+
 # keep_alive()
 if __name__ == "__main__":
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    asyncio.run(main())
