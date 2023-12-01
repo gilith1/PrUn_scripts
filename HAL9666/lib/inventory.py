@@ -1,11 +1,25 @@
+import asyncio
 import csv
+from datetime import datetime
 import logging
 import os
+from dataclasses import dataclass
 from typing import Iterable, Any
 
-import requests
+import httpx
+from periodic import Periodic
 
 Log = logging.getLogger(__name__)
+
+http_client = httpx.AsyncClient()
+
+@dataclass
+class GroupInventory:
+    group_id: str
+    group_name: str
+    last_updated: datetime
+    inventory: dict[str, dict[str, list[tuple[str, int]]]]
+
 
 # corp spreadsheet exported as CSV
 OfferingsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTU0PDYV0CYk5LObZAFcxIXZNshT27WHvy1CZNmm8paC7eMVmTlCk3rxIFyEY6Tbiz0uiIDG8CxGuCm/pub?gid=0&single=true&output=csv"
@@ -14,8 +28,8 @@ CachedSellersData: Iterable[dict[str, str]] = {}
 FioInventoryUrl = "https://rest.fnar.net/csv/inventory?group={group}&apikey={apikey}"
 FioInventoryShipyardGroup = "41707164"
 FioInventoryEv1lGroup = "83373923"
-CachedShipyardInventories: dict[str, dict[str, list[tuple[str, int]]]] = {}
-CachedEv1lInventories: dict[str, dict[str, list[tuple[str, int]]]] = {}
+CachedShipyardInventories = GroupInventory(FioInventoryShipyardGroup, "Shipyard Group", datetime.fromtimestamp(0), {})
+CachedEv1lInventories = GroupInventory(FioInventoryEv1lGroup, "Ev1l Group", datetime.fromtimestamp(0), {})
 ShipPartTickers = (
     "BR1",
     "BR2",  # bridges
@@ -70,40 +84,56 @@ ShipPartTickers = (
 )
 
 
-def updateInventory(
-    groupId: str, inventory: dict[str, dict[str, list[tuple[str, int]]]]
+async def updateInventories():
+    global CachedShipyardInventories
+    global CachedEv1lInventories
+
+    try:
+        await asyncio.gather(
+            updateInventory(CachedShipyardInventories),
+            updateInventory(CachedEv1lInventories),
+        )
+    except Exception:
+        pass
+
+
+async def updateInventory(
+    inventory: GroupInventory
 ):
-    fioUrl = FioInventoryUrl.format(apikey=os.getenv("FIO_API_KEY"), group=groupId)
-    response = requests.get(fioUrl)
+    fioUrl = FioInventoryUrl.format(apikey=os.getenv("FIO_API_KEY"), group=inventory.group_id)
+    response = await http_client.get(fioUrl)
     if response.status_code != 200:
-        raise Exception(f"Failed to update inventory for groupId {groupId}")
+        raise Exception(f"Failed to update inventory for group {inventory.group_name} (id:{inventory.group_id})")
 
     csvData = csv.DictReader(response.text.split("\r\n"))
 
-    inventory.clear()
+    new_inventory = {}
     for row in csvData:
-        if row["Username"] not in inventory:
-            inventory[row["Username"]] = {}
-        if row["Ticker"] not in inventory[row["Username"]]:
-            inventory[row["Username"]][row["Ticker"]] = []
-        inventory[row["Username"]][row["Ticker"]].append(
+        if row["Username"] not in new_inventory:
+            new_inventory[row["Username"]] = {}
+        if row["Ticker"] not in new_inventory[row["Username"]]:
+            new_inventory[row["Username"]][row["Ticker"]] = []
+        new_inventory[row["Username"]][row["Ticker"]].append(
             (row["NaturalId"], int(row["Amount"]))
         )
 
+    inventory.inventory = new_inventory
+    inventory.last_updated = datetime.now()
 
-def findInInventory(
+
+async def findInInventory(
     ticker: str,
-    inventory: dict[str, dict[str, list[tuple[str, int]]]],
+    inventory: GroupInventory,
     shouldReturnAll: bool = False,
 ) -> list[tuple[str, int]]:
     result: list[tuple[str, list[tuple[str, int]]]] = []
     # filter for only ticker we want
-    for user, inv in inventory.items():
+    for user, inv in inventory.inventory.items():
         if ticker in inv:
             result.append((user, inv[ticker]))
 
     if not shouldReturnAll:
-        sellersData = getSellerData(ticker)
+        sellersData = await getSellerData(ticker)
         sellers = [s for s in sellersData.keys()]
         print("Sellers:", str(sellers))
         seller_filtered_result = [x for x in result if x[0] in sellers]
@@ -131,10 +161,10 @@ def findInInventory(
     return sorted(summed_inventories, key=lambda x: x[1])[::-1]
 
 
-def getSellerData(ticker: str) -> dict[str, list[str]]:
+async def getSellerData(ticker: str) -> dict[str, list[str]]:
     global CachedSellersData
     result = {}
-    response = requests.get(OfferingsCsvUrl)
+    response = await http_client.get(OfferingsCsvUrl)
     if response.status_code == 200:
         CachedSellersData = list(csv.DictReader(response.text.split("\r\n")))
     if CachedSellersData:
@@ -148,7 +178,7 @@ def getSellerData(ticker: str) -> dict[str, list[str]]:
 
 
 async def whohas(
-    ctx: Any, ticker: str, shouldReturnAll: bool = False
+    ctx: Any, ticker: str, shouldReturnAll: bool = False, forceUpdate: bool = False
 ) -> list[tuple[str, int]]:
     Log.info("whohas", ticker)
 
@@ -157,17 +187,22 @@ async def whohas(
     global CachedEv1lInventories
     isShipPartTicker = ticker in ShipPartTickers
 
-    group = FioInventoryShipyardGroup if isShipPartTicker else FioInventoryEv1lGroup
     inventory = CachedShipyardInventories if isShipPartTicker else CachedEv1lInventories
-    try:
-        updateInventory(groupId=group, inventory=inventory)
-    except Exception as e:
-        await ctx.reply(
-            "Error updating inventory from FIO. Falling back to cached data"
-        )
+    if forceUpdate:
+        try:
+            await updateInventory(inventory=inventory)
+        except Exception as e:
+            await ctx.reply(
+                "Error updating inventory from FIO. Falling back to cached data"
+            )
 
-    result = findInInventory(ticker, inventory, shouldReturnAll)
+    result = await findInInventory(ticker, inventory, shouldReturnAll)
     # print(str(result))
     print("Full:", str(result))
 
     return result
+
+
+async def fetch_inventory_data_periodically():
+    p = Periodic(300, updateInventories)
+    await p.start()
