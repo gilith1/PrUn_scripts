@@ -7,73 +7,73 @@ import requests
 
 Log = logging.getLogger(__name__)
 
-#corp spreadsheet exported as CSV
+# corp spreadsheet exported as CSV
 OfferingsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTU0PDYV0CYk5LObZAFcxIXZNshT27WHvy1CZNmm8paC7eMVmTlCk3rxIFyEY6Tbiz0uiIDG8CxGuCm/pub?gid=0&single=true&output=csv"
-CachedSellersData:  Iterable[dict[str, str]] = {}
+CachedSellersData: Iterable[dict[str, str]] = {}
 
 FioInventoryUrl = "https://rest.fnar.net/csv/inventory?group={group}&apikey={apikey}"
 FioInventoryShipyardGroup = "41707164"
 FioInventoryEv1lGroup = "83373923"
-CachedShipyardInventories: dict[str, dict[str, list[tuple[str,int]]]] = {}
-CachedEv1lInventories: dict[str, dict[str, list[tuple[str,int]]]] = {}
+CachedShipyardInventories: dict[str, dict[str, list[tuple[str, int]]]] = {}
+CachedEv1lInventories: dict[str, dict[str, list[tuple[str, int]]]] = {}
 ShipPartTickers = (
     "BR1",
-    "BR2",  #bridges
+    "BR2",  # bridges
     "CQT",
     "CQS",
     "CQM",
-    "CQL",  #crew q
+    "CQL",  # crew q
     "FFC",
     "SFE",
     "MFE",
-    "LFE",  #FFC, emitters
+    "LFE",  # FFC, emitters
     "GEN",
     "ENG",
     "FSE",
     "AEN",
-    "HTE",  #STL engines
+    "HTE",  # STL engines
     "RCT",
     "QCR",
     "HPR",
-    "HYR",  #FTL engines
+    "HYR",  # FTL engines
     "SSL",
     "MSL",
-    "LSL",  #STL fuel tanks
+    "LSL",  # STL fuel tanks
     "SFL",
     "MFL",
-    "LFL",  #FTL fuel tanks
+    "LFL",  # FTL fuel tanks
     "TCB",
     "VSC",
     "SCB",
     "MCB",
     "LCB",
     "WCB",
-    "VCB",  #cargo bays
+    "VCB",  # cargo bays
     "SSC",
     "LHB",
     "BHP",
     "RHP",
     "HHP",
-    "AHP",  #hull plates, SSC
+    "AHP",  # hull plates, SSC
     "BGS",
     "AGS",
-    "STS",  #misc
+    "STS",  # misc
     "BPT",
     "APT",
     "BWH",
-    "AWH",  #whipple shields and thermal protection
+    "AWH",  # whipple shields and thermal protection
     "RDS",
-    "RDL",  #repair drones
+    "RDL",  # repair drones
     "BRP",
     "ARP",
-    "SRP"  #anti-radiation plates
+    "SRP",  # anti-radiation plates
 )
 
 
-def updateInventory(groupId: str, inventory: dict[str, dict[str, list[tuple[str, int]]]]):
-    fioUrl = FioInventoryUrl.format(
-        apikey=os.getenv("FIO_API_KEY"),
-        group=groupId)
+def updateInventory(
+    groupId: str, inventory: dict[str, dict[str, list[tuple[str, int]]]]
+):
+    fioUrl = FioInventoryUrl.format(apikey=os.getenv("FIO_API_KEY"), group=groupId)
     response = requests.get(fioUrl)
     if response.status_code != 200:
         raise Exception(f"Failed to update inventory for groupId {groupId}")
@@ -86,14 +86,19 @@ def updateInventory(groupId: str, inventory: dict[str, dict[str, list[tuple[str,
             inventory[row["Username"]] = {}
         if row["Ticker"] not in inventory[row["Username"]]:
             inventory[row["Username"]][row["Ticker"]] = []
-        inventory[row["Username"]][row["Ticker"]].append((row["NaturalId"], int(row["Amount"])))
+        inventory[row["Username"]][row["Ticker"]].append(
+            (row["NaturalId"], int(row["Amount"]))
+        )
 
 
-def findInInventory(ticker: str, inventory: dict[str, dict[str, list[tuple[str, int]]]],
-                    shouldReturnAll: bool = False) -> list[tuple[str, int]]:
+def findInInventory(
+    ticker: str,
+    inventory: dict[str, dict[str, list[tuple[str, int]]]],
+    shouldReturnAll: bool = False,
+) -> list[tuple[str, int]]:
     result: list[tuple[str, list[tuple[str, int]]]] = []
     # filter for only ticker we want
-    for (user, inv) in inventory.items():
+    for user, inv in inventory.items():
         if ticker in inv:
             result.append((user, inv[ticker]))
 
@@ -105,8 +110,12 @@ def findInInventory(ticker: str, inventory: dict[str, dict[str, list[tuple[str, 
 
         pos_filtered_result: list[tuple[str, list[tuple[str, int]]]] = []
 
-        for (user, inv_rows) in seller_filtered_result:
-            filtered_inv_rows = [x for x in inv_rows if x[0] in sellersData[user] or len(sellersData[user]) == 0]
+        for user, inv_rows in seller_filtered_result:
+            filtered_inv_rows = [
+                x
+                for x in inv_rows
+                if x[0] in sellersData[user] or len(sellersData[user]) == 0
+            ]
             if len(filtered_inv_rows) > 0:
                 pos_filtered_result.append((user, filtered_inv_rows))
 
@@ -114,7 +123,7 @@ def findInInventory(ticker: str, inventory: dict[str, dict[str, list[tuple[str, 
 
     summed_inventories: list[tuple[str, int]] = []
     # sum up amounts from all remaining locations
-    for (user, inv_rows) in result:
+    for user, inv_rows in result:
         amount = sum([x[1] for x in inv_rows])
         if amount > 0:
             summed_inventories.append((user, amount))
@@ -131,14 +140,16 @@ def getSellerData(ticker: str) -> dict[str, list[str]]:
     if CachedSellersData:
         result: dict[str, list[str]] = {}
         for row in CachedSellersData:
-            pos_list = [x.strip() for x in row.get("POS", "").split(',') if x != ""]
+            pos_list = [x.strip() for x in row.get("POS", "").split(",") if x != ""]
             if row["MAT"] == ticker:
-                result[row['Seller'].upper()] = pos_list
+                result[row["Seller"].upper()] = pos_list
 
     return result
 
 
-async def whohas(ctx: Any, ticker: str, shouldReturnAll: bool = False) -> list[tuple[str, int]]:
+async def whohas(
+    ctx: Any, ticker: str, shouldReturnAll: bool = False
+) -> list[tuple[str, int]]:
     Log.info("whohas", ticker)
 
     # update relevant group inventory
