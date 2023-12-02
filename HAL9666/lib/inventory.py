@@ -4,7 +4,7 @@ from datetime import datetime
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Iterable, Any, Optional
+from typing import Any, Optional
 
 import httpx
 from httpx import AsyncClient
@@ -52,6 +52,46 @@ class GroupInventory:
         self.inventory = new_inventory
         self.last_updated = datetime.now()
         self._initialized = True
+
+    def findInInventory(
+        self,
+        ticker: str,
+        sellerData: "SellerData",
+        shouldReturnAll: bool = False,
+    ) -> list[tuple[str, int]]:
+        result: list[tuple[str, list[tuple[str, int]]]] = []
+        # filter for only ticker we want
+        for user, inv in self.inventory.items():
+            if ticker in inv:
+                result.append((user, inv[ticker]))
+
+        if not shouldReturnAll:
+            sellersData = sellerData.get_sellers_for_ticker(ticker)
+            sellers = [s for s in sellersData.keys()]
+            print("Sellers:", str(sellers))
+            seller_filtered_result = [x for x in result if x[0] in sellers]
+
+            pos_filtered_result: list[tuple[str, list[tuple[str, int]]]] = []
+
+            for user, inv_rows in seller_filtered_result:
+                filtered_inv_rows = [
+                    x
+                    for x in inv_rows
+                    if x[0] in sellersData[user] or len(sellersData[user]) == 0
+                ]
+                if len(filtered_inv_rows) > 0:
+                    pos_filtered_result.append((user, filtered_inv_rows))
+
+            result = pos_filtered_result
+
+        summed_inventories: list[tuple[str, int]] = []
+        # sum up amounts from all remaining locations
+        for user, inv_rows in result:
+            amount = sum([x[1] for x in inv_rows])
+            if amount > 0:
+                summed_inventories.append((user, amount))
+
+        return sorted(summed_inventories, key=lambda x: x[1])[::-1]
 
 
 class SellerData:
@@ -158,47 +198,6 @@ async def updateInventories():
         pass
 
 
-async def findInInventory(
-    ticker: str,
-    inventory: GroupInventory,
-    sellerData: SellerData,
-    shouldReturnAll: bool = False,
-) -> list[tuple[str, int]]:
-    result: list[tuple[str, list[tuple[str, int]]]] = []
-    # filter for only ticker we want
-    for user, inv in inventory.inventory.items():
-        if ticker in inv:
-            result.append((user, inv[ticker]))
-
-    if not shouldReturnAll:
-        sellersData = sellerData.get_sellers_for_ticker(ticker)
-        sellers = [s for s in sellersData.keys()]
-        print("Sellers:", str(sellers))
-        seller_filtered_result = [x for x in result if x[0] in sellers]
-
-        pos_filtered_result: list[tuple[str, list[tuple[str, int]]]] = []
-
-        for user, inv_rows in seller_filtered_result:
-            filtered_inv_rows = [
-                x
-                for x in inv_rows
-                if x[0] in sellersData[user] or len(sellersData[user]) == 0
-            ]
-            if len(filtered_inv_rows) > 0:
-                pos_filtered_result.append((user, filtered_inv_rows))
-
-        result = pos_filtered_result
-
-    summed_inventories: list[tuple[str, int]] = []
-    # sum up amounts from all remaining locations
-    for user, inv_rows in result:
-        amount = sum([x[1] for x in inv_rows])
-        if amount > 0:
-            summed_inventories.append((user, amount))
-
-    return sorted(summed_inventories, key=lambda x: x[1])[::-1]
-
-
 async def whohas(
     ctx: Any, ticker: str, shouldReturnAll: bool = False, forceUpdate: bool = False
 ) -> list[tuple[str, int]]:
@@ -224,11 +223,10 @@ async def whohas(
         async with AsyncClient() as client:
             await CachedSellersData.update(client)
 
-    result = await findInInventory(
+    result = inventory.findInInventory(
         ticker=ticker,
-        inventory=inventory,
         sellerData=CachedSellersData,
-        shouldReturnAll=shouldReturnAll
+        shouldReturnAll=shouldReturnAll,
     )
     # print(str(result))
     print("Full:", str(result))
