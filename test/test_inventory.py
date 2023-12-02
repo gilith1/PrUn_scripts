@@ -8,9 +8,9 @@ from HAL9666.lib.inventory import getSellerData, whohas
 
 
 @pytest.mark.asyncio
-@patch("HAL9666.lib.inventory.http_client.get")
+@patch("HAL9666.lib.inventory.AsyncClient")
 @patch("HAL9666.lib.inventory.getSellerData")
-async def test_inventory(mock_getSellerData, http_client_get):
+async def test_inventory(mock_getSellerData, async_client):
     general_csv_stream = create_csv(
         [
             {
@@ -30,7 +30,10 @@ async def test_inventory(mock_getSellerData, http_client_get):
     fake_fio_response.status_code = 200
     fake_fio_response.text = general_csv_stream
 
-    http_client_get.return_value = fake_fio_response
+    http_client = MagicMock()
+    http_client.get = AsyncMock(return_value=fake_fio_response)
+
+    async_client.return_value.__aenter__.return_value = http_client
 
     mock_getSellerData.return_value = {"Kindling": [], "Felmer": [], "Gilith": []}
 
@@ -84,9 +87,9 @@ async def test_inventory(mock_getSellerData, http_client_get):
 
 
 @pytest.mark.asyncio
-@patch("HAL9666.lib.inventory.http_client.get")
+@patch("HAL9666.lib.inventory.AsyncClient")
 @patch("HAL9666.lib.inventory.getSellerData")
-async def test_pos_filter(mock_getSellerData, http_client_get):
+async def test_pos_filter(mock_getSellerData, async_client):
     # when someone has set POS filter, we should only count the amounts from those locations
     mock_getSellerData.return_value = {
         "Kindling": ["UV-351a"],
@@ -127,7 +130,10 @@ async def test_pos_filter(mock_getSellerData, http_client_get):
     fio_response.status_code = 200
     fio_response.text = csv_stream
 
-    http_client_get.return_value = fio_response
+    http_client = MagicMock()
+    http_client.get = AsyncMock(return_value=fio_response)
+
+    async_client.return_value.__aenter__.return_value = http_client
 
     inv = await whohas(MagicMock(), "C", False, forceUpdate=True)
 
@@ -137,6 +143,7 @@ async def test_pos_filter(mock_getSellerData, http_client_get):
 
 
 # TODO: test shouldReturnAll = False
+
 
 @pytest.mark.asyncio
 @patch("HAL9666.lib.inventory.http_client.get")
