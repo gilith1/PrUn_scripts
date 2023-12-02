@@ -3,10 +3,11 @@ import csv
 from datetime import datetime
 import logging
 import os
-from dataclasses import dataclass
-from typing import Iterable, Any
+from dataclasses import dataclass, field
+from typing import Iterable, Any, Optional
 
 import httpx
+from httpx import AsyncClient
 from periodic import Periodic
 
 Log = logging.getLogger(__name__)
@@ -17,19 +18,53 @@ http_client = httpx.AsyncClient()
 class GroupInventory:
     group_id: str
     group_name: str
-    last_updated: datetime
-    inventory: dict[str, dict[str, list[tuple[str, int]]]]
+    api_key: str
+    last_updated: Optional[datetime] = None
+    inventory: dict[str, dict[str, list[tuple[str, int]]]] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self._initialized: bool = False
+        self._fio_url = f"https://rest.fnar.net/csv/inventory?group={self.group_id}&apikey={self.api_key}"
+
+    def is_initialized(self):
+        return self._initialized
+
+    async def update(self, client: AsyncClient):
+        response = await client.get(self._fio_url)
+        if response.status_code != 200:
+            raise Exception(
+                f"Failed to update inventory for group {self.group_name} (id:{self.group_id})"
+            )
+
+        csvData = csv.DictReader(response.text.split("\r\n"))
+
+        new_inventory = {}
+        for row in csvData:
+            if row["Username"] not in new_inventory:
+                new_inventory[row["Username"]] = {}
+            if row["Ticker"] not in new_inventory[row["Username"]]:
+                new_inventory[row["Username"]][row["Ticker"]] = []
+            new_inventory[row["Username"]][row["Ticker"]].append(
+                (row["NaturalId"], int(row["Amount"]))
+            )
+
+        self.inventory = new_inventory
+        self.last_updated = datetime.now()
+        self._initialized = True
 
 
 # corp spreadsheet exported as CSV
 OfferingsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTU0PDYV0CYk5LObZAFcxIXZNshT27WHvy1CZNmm8paC7eMVmTlCk3rxIFyEY6Tbiz0uiIDG8CxGuCm/pub?gid=0&single=true&output=csv"
 CachedSellersData: Iterable[dict[str, str]] = {}
 
-FioInventoryUrl = "https://rest.fnar.net/csv/inventory?group={group}&apikey={apikey}"
-FioInventoryShipyardGroup = "41707164"
-FioInventoryEv1lGroup = "83373923"
-CachedShipyardInventories = GroupInventory(FioInventoryShipyardGroup, "Shipyard Group", datetime.fromtimestamp(0), {})
-CachedEv1lInventories = GroupInventory(FioInventoryEv1lGroup, "Ev1l Group", datetime.fromtimestamp(0), {})
+CachedShipyardInventories = GroupInventory(
+    group_id="41707164", group_name="Shipyard Group", api_key=os.getenv("FIO_API_KEY")
+)
+CachedEv1lInventories = GroupInventory(
+    group_id="83373923",
+    group_name="Ev1l Group",
+    api_key=os.getenv("FIO_API_KEY"),
+)
 ShipPartTickers = (
     "BR1",
     "BR2",  # bridges
@@ -89,36 +124,13 @@ async def updateInventories():
     global CachedEv1lInventories
 
     try:
-        await asyncio.gather(
-            updateInventory(CachedShipyardInventories),
-            updateInventory(CachedEv1lInventories),
-        )
+        async with AsyncClient() as client:
+            await asyncio.gather(
+                CachedShipyardInventories.update(client),
+                CachedEv1lInventories.update(client),
+            )
     except Exception:
         pass
-
-
-async def updateInventory(
-    inventory: GroupInventory
-):
-    fioUrl = FioInventoryUrl.format(apikey=os.getenv("FIO_API_KEY"), group=inventory.group_id)
-    response = await http_client.get(fioUrl)
-    if response.status_code != 200:
-        raise Exception(f"Failed to update inventory for group {inventory.group_name} (id:{inventory.group_id})")
-
-    csvData = csv.DictReader(response.text.split("\r\n"))
-
-    new_inventory = {}
-    for row in csvData:
-        if row["Username"] not in new_inventory:
-            new_inventory[row["Username"]] = {}
-        if row["Ticker"] not in new_inventory[row["Username"]]:
-            new_inventory[row["Username"]][row["Ticker"]] = []
-        new_inventory[row["Username"]][row["Ticker"]].append(
-            (row["NaturalId"], int(row["Amount"]))
-        )
-
-    inventory.inventory = new_inventory
-    inventory.last_updated = datetime.now()
 
 
 async def findInInventory(
@@ -188,9 +200,10 @@ async def whohas(
     isShipPartTicker = ticker in ShipPartTickers
 
     inventory = CachedShipyardInventories if isShipPartTicker else CachedEv1lInventories
-    if forceUpdate:
+    if forceUpdate or not inventory.is_initialized():
         try:
-            await updateInventory(inventory=inventory)
+            async with AsyncClient() as client:
+                await inventory.update(client)
         except Exception as e:
             await ctx.reply(
                 "Error updating inventory from FIO. Falling back to cached data"
