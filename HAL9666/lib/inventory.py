@@ -14,6 +14,7 @@ Log = logging.getLogger(__name__)
 
 http_client = httpx.AsyncClient()
 
+
 @dataclass
 class GroupInventory:
     group_id: str
@@ -53,9 +54,31 @@ class GroupInventory:
         self._initialized = True
 
 
-# corp spreadsheet exported as CSV
-OfferingsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTU0PDYV0CYk5LObZAFcxIXZNshT27WHvy1CZNmm8paC7eMVmTlCk3rxIFyEY6Tbiz0uiIDG8CxGuCm/pub?gid=0&single=true&output=csv"
-CachedSellersData: Iterable[dict[str, str]] = {}
+class SellerData:
+    last_updated: Optional[datetime] = None
+    data: list[dict[str, str]]
+    _seller_sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTU0PDYV0CYk5LObZAFcxIXZNshT27WHvy1CZNmm8paC7eMVmTlCk3rxIFyEY6Tbiz0uiIDG8CxGuCm/pub?gid=0&single=true&output=csv"
+
+    def __init__(self):
+        self.data = []
+
+    async def update(self, client):
+        response = await client.get(self._seller_sheet_url)
+        if response.status_code == 200:
+            self.data = list(csv.DictReader(response.text.split("\r\n")))
+            self.last_updated = datetime.now()
+
+    def get_sellers_for_ticker(self, ticker: str) -> dict[str, list[str]]:
+        result: dict[str, list[str]] = {}
+        for row in self.data:
+            pos_list = [x.strip() for x in row.get("POS", "").split(",") if x != ""]
+            if row["MAT"] == ticker:
+                result[row["Seller"].upper()] = pos_list
+
+        return result
+
+
+CachedSellersData: SellerData = SellerData()
 
 CachedShipyardInventories = GroupInventory(
     group_id="41707164", group_name="Shipyard Group", api_key=os.getenv("FIO_API_KEY")
@@ -122,12 +145,14 @@ ShipPartTickers = (
 async def updateInventories():
     global CachedShipyardInventories
     global CachedEv1lInventories
+    global CachedSellersData
 
     try:
         async with AsyncClient() as client:
             await asyncio.gather(
                 CachedShipyardInventories.update(client),
                 CachedEv1lInventories.update(client),
+                CachedSellersData.update(client),
             )
     except Exception:
         pass
@@ -136,6 +161,7 @@ async def updateInventories():
 async def findInInventory(
     ticker: str,
     inventory: GroupInventory,
+    sellerData: SellerData,
     shouldReturnAll: bool = False,
 ) -> list[tuple[str, int]]:
     result: list[tuple[str, list[tuple[str, int]]]] = []
@@ -145,7 +171,7 @@ async def findInInventory(
             result.append((user, inv[ticker]))
 
     if not shouldReturnAll:
-        sellersData = await getSellerData(ticker)
+        sellersData = sellerData.get_sellers_for_ticker(ticker)
         sellers = [s for s in sellersData.keys()]
         print("Sellers:", str(sellers))
         seller_filtered_result = [x for x in result if x[0] in sellers]
@@ -173,22 +199,6 @@ async def findInInventory(
     return sorted(summed_inventories, key=lambda x: x[1])[::-1]
 
 
-async def getSellerData(ticker: str) -> dict[str, list[str]]:
-    global CachedSellersData
-    result = {}
-    response = await http_client.get(OfferingsCsvUrl)
-    if response.status_code == 200:
-        CachedSellersData = list(csv.DictReader(response.text.split("\r\n")))
-    if CachedSellersData:
-        result: dict[str, list[str]] = {}
-        for row in CachedSellersData:
-            pos_list = [x.strip() for x in row.get("POS", "").split(",") if x != ""]
-            if row["MAT"] == ticker:
-                result[row["Seller"].upper()] = pos_list
-
-    return result
-
-
 async def whohas(
     ctx: Any, ticker: str, shouldReturnAll: bool = False, forceUpdate: bool = False
 ) -> list[tuple[str, int]]:
@@ -197,6 +207,7 @@ async def whohas(
     # update relevant group inventory
     global CachedShipyardInventories
     global CachedEv1lInventories
+    global CachedSellersData
     isShipPartTicker = ticker in ShipPartTickers
 
     inventory = CachedShipyardInventories if isShipPartTicker else CachedEv1lInventories
@@ -209,7 +220,16 @@ async def whohas(
                 "Error updating inventory from FIO. Falling back to cached data"
             )
 
-    result = await findInInventory(ticker, inventory, shouldReturnAll)
+    if forceUpdate:
+        async with AsyncClient() as client:
+            await CachedSellersData.update(client)
+
+    result = await findInInventory(
+        ticker=ticker,
+        inventory=inventory,
+        sellerData=CachedSellersData,
+        shouldReturnAll=shouldReturnAll
+    )
     # print(str(result))
     print("Full:", str(result))
 

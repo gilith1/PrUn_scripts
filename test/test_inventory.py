@@ -4,13 +4,13 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
-from HAL9666.lib.inventory import getSellerData, whohas
+from HAL9666.lib.inventory import whohas, SellerData
 
 
 @pytest.mark.asyncio
 @patch("HAL9666.lib.inventory.AsyncClient")
-@patch("HAL9666.lib.inventory.getSellerData")
-async def test_inventory(mock_getSellerData, async_client):
+@patch("HAL9666.lib.inventory.CachedSellersData")
+async def test_inventory(mock_seller_data, async_client):
     general_csv_stream = create_csv(
         [
             {
@@ -35,7 +35,8 @@ async def test_inventory(mock_getSellerData, async_client):
 
     async_client.return_value.__aenter__.return_value = http_client
 
-    mock_getSellerData.return_value = {"Kindling": [], "Felmer": [], "Gilith": []}
+    mock_seller_data.update = AsyncMock()
+    mock_seller_data.get_sellers_for_ticker = MagicMock(return_value={"Kindling": [], "Felmer": [], "Gilith": []})
 
     inv = await whohas(AsyncMock(), "C", forceUpdate=True)
     assert inv[0] == ("Kindling", 200)
@@ -88,14 +89,17 @@ async def test_inventory(mock_getSellerData, async_client):
 
 @pytest.mark.asyncio
 @patch("HAL9666.lib.inventory.AsyncClient")
-@patch("HAL9666.lib.inventory.getSellerData")
-async def test_pos_filter(mock_getSellerData, async_client):
+@patch("HAL9666.lib.inventory.CachedSellersData")
+async def test_pos_filter(mock_seller_data, async_client):
     # when someone has set POS filter, we should only count the amounts from those locations
-    mock_getSellerData.return_value = {
+    seller_data = {
         "Kindling": ["UV-351a"],
         "Felmer": ["XG-521b"],
         "Gilith": [],
     }
+
+    mock_seller_data.update = AsyncMock()
+    mock_seller_data.get_sellers_for_ticker = MagicMock(return_value=seller_data)
 
     csv_stream = create_csv(
         [
@@ -146,26 +150,32 @@ async def test_pos_filter(mock_getSellerData, async_client):
 
 
 @pytest.mark.asyncio
-@patch("HAL9666.lib.inventory.http_client.get")
-async def test_getSellersData(http_client_get):
+async def test_sellerdata():
     csv_data = [
         {"MAT": "C", "Seller": "Kindling", "POS": "KW-688c", "Price/u": "300"},
         {"MAT": "C", "Seller": "Felmer", "POS": "", "Price/u": "300"},
         {"MAT": "WCB", "Seller": "Felmer", "POS": "UV-351a", "Price/u": "300000"},
     ]
-    sheets_csv_stream = create_csv(csv_data)
 
-    fake_fio_response = MagicMock()
-    fake_fio_response.status_code = 200
-    fake_fio_response.text = sheets_csv_stream
-    http_client_get.return_value = fake_fio_response
+    csv_stream = create_csv(csv_data)
 
-    sellers = await getSellerData("C")
+    fake_sheets_response = MagicMock()
+    fake_sheets_response.status_code = 200
+    fake_sheets_response.text = csv_stream
+
+    client = MagicMock()
+    client.get = AsyncMock(return_value=fake_sheets_response)
+    seller_data = SellerData()
+    await seller_data.update(client)
+
+    assert len(seller_data.data) == 3
+
+    sellers = seller_data.get_sellers_for_ticker("C")
 
     assert isinstance(sellers, dict)
     assert len(sellers) == 2
 
-    sellers = await getSellerData("WCB")
+    sellers = seller_data.get_sellers_for_ticker("WCB")
     assert len(sellers) == 1
 
 
