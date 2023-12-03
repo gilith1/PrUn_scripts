@@ -38,7 +38,7 @@ async def test_inventory(mock_seller_data, async_client):
     mock_seller_data.update = AsyncMock()
     mock_seller_data.get_sellers_for_ticker = MagicMock(return_value={"Kindling": [], "Felmer": [], "Gilith": []})
 
-    inv = await whohas(AsyncMock(), "C", forceUpdate=True)
+    inv, last_updated = await whohas(AsyncMock(), "C", forceUpdate=True)
     assert inv[0] == ("Kindling", 200)
 
     general_csv_stream = create_csv(
@@ -59,7 +59,7 @@ async def test_inventory(mock_seller_data, async_client):
     )
     fake_fio_response.text = general_csv_stream
 
-    inv = await whohas(AsyncMock(), "C", forceUpdate=True)
+    inv, last_updated = await whohas(AsyncMock(), "C", forceUpdate=True)
 
     assert inv[0] == ("Felmer", 250)
     assert inv[1] == ("Kindling", 200)
@@ -68,20 +68,20 @@ async def test_inventory(mock_seller_data, async_client):
 
     ctx = MagicMock()
     ctx.reply = AsyncMock()
-    inv = await whohas(ctx, "C", forceUpdate=True)
+    inv, last_updated = await whohas(ctx, "C", forceUpdate=True)
 
     assert inv[0] == ("Felmer", 250)
     assert inv[1] == ("Kindling", 200)
 
     fake_fio_response.status_code = 200
     fake_fio_response.text = shipyard_csv_stream
-    inv = await whohas(ctx, "WCB", forceUpdate=True)
+    inv, last_updated = await whohas(ctx, "WCB", forceUpdate=True)
 
     assert len(inv) == 1
     assert inv[0] == ("Felmer", 3)
 
     fake_fio_response.status_code = 500
-    inv = await whohas(ctx, "C", forceUpdate=True)
+    inv, last_updated = await whohas(ctx, "C", forceUpdate=True)
 
     assert inv[0] == ("Felmer", 250)
     assert inv[1] == ("Kindling", 200)
@@ -139,14 +139,11 @@ async def test_pos_filter(mock_seller_data, async_client):
 
     async_client.return_value.__aenter__.return_value = http_client
 
-    inv = await whohas(MagicMock(), "C", False, forceUpdate=True)
+    inv, last_updated = await whohas(MagicMock(), "C", False, forceUpdate=True)
 
     assert len(inv) == 2
     assert ("Kindling", 200) in inv
     assert ("Gilith", 100) in inv
-
-
-# TODO: test shouldReturnAll = False
 
 
 @pytest.mark.asyncio
