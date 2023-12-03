@@ -42,6 +42,7 @@ class GroupInventory:
             raise Exception(f"Retries exhausted. Failed to update inventory for group {self.group_name} (id:{self.group_id})")
         else:
             Log.info(f"Retrying fetch for group {self.group_name}")
+
         if response.status_code == 200:
             Log.info(f"Updated FIO inventory for group {self.group_name}")
         elif response.status_code == 429:
@@ -51,7 +52,7 @@ class GroupInventory:
             #  if this call was a 429, we don't want to fall through to the actual update after this
             #  That is handled by whatever retry call gets a 200 response
             return
-        elif response.status_code != 200:
+        else:
             raise Exception(
                 f"Failed to update inventory for group {self.group_name} (id:{self.group_id})"
             )
@@ -127,7 +128,7 @@ class SellerData:
         )
         if response.status_code == 307:
             Log.info(f"Got a temporary rediret")
-        if response.status_code == 200:
+        elif response.status_code == 200:
             self.data = list(csv.DictReader(response.text.split("\r\n")))
             self.last_updated = datetime.now()
             Log.info(
