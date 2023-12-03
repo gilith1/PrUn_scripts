@@ -1,18 +1,21 @@
 import asyncio
 import csv
-from datetime import datetime
 import logging
 import os
+import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Optional
 
-import httpx
 from httpx import AsyncClient
 from periodic import Periodic
 
+logging.basicConfig(
+    stream=sys.stdout, level=logging.INFO, format="%(asctime)s (%(levelname)s) : %(message)s"
+)
 Log = logging.getLogger(__name__)
 
-http_client = httpx.AsyncClient()
+http_client = AsyncClient()
 
 
 @dataclass
@@ -23,23 +26,39 @@ class GroupInventory:
     last_updated: Optional[datetime] = None
     inventory: dict[str, dict[str, list[tuple[str, int]]]] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._initialized: bool = False
         self._fio_url = f"https://rest.fnar.net/csv/inventory?group={self.group_id}&apikey={self.api_key}"
 
-    def is_initialized(self):
+    def is_initialized(self) -> bool:
         return self._initialized
 
-    async def update(self, client: AsyncClient):
-        response = await client.get(self._fio_url)
-        if response.status_code != 200:
+    async def update(self, client: AsyncClient, retries: int = 0):
+        response = await client.get(self._fio_url, timeout=5)
+        if retries < 1:
+            Log.info(f"Updating FIO inventory for group {self.group_name}")
+        elif retries > 10:
+            Log.error(f"Unable to update FIO data after {retries} retries.")
+            raise Exception(f"Retries exhausted. Failed to update inventory for group {self.group_name} (id:{self.group_id})")
+        else:
+            Log.info(f"Retrying fetch for group {self.group_name}")
+        if response.status_code == 200:
+            Log.info(f"Updated FIO inventory for group {self.group_name}")
+        elif response.status_code == 429:
+            Log.info(f"HTTP 429, Retrying in 200ms")
+            await asyncio.sleep(0.2)
+            await self.update(client, retries=retries+1)
+            #  if this call was a 429, we don't want to fall through to the actual update after this
+            #  That is handled by whatever retry call gets a 200 response
+            return
+        elif response.status_code != 200:
             raise Exception(
                 f"Failed to update inventory for group {self.group_name} (id:{self.group_id})"
             )
 
         csvData = csv.DictReader(response.text.split("\r\n"))
 
-        new_inventory = {}
+        new_inventory: dict[str, dict[str, list[tuple[str, int]]]] = {}
         for row in csvData:
             if row["Username"] not in new_inventory:
                 new_inventory[row["Username"]] = {}
@@ -102,11 +121,20 @@ class SellerData:
     def __init__(self):
         self.data = []
 
-    async def update(self, client):
-        response = await client.get(self._seller_sheet_url)
+    async def update(self, client: AsyncClient):
+        response = await client.get(
+            self._seller_sheet_url, follow_redirects=True, timeout=5
+        )
+        if response.status_code == 307:
+            Log.info(f"Got a temporary rediret")
         if response.status_code == 200:
             self.data = list(csv.DictReader(response.text.split("\r\n")))
             self.last_updated = datetime.now()
+            Log.info(
+                f"Updated seller data from Google Sheet, got response code {response.status_code}"
+            )
+            if len(self.data) < 1:
+                Log.warning(f"It appears that we got an empty response from the sheet")
 
     def get_sellers_for_ticker(self, ticker: str) -> dict[str, list[str]]:
         result: dict[str, list[str]] = {}
@@ -118,15 +146,17 @@ class SellerData:
         return result
 
 
+UpdateInterval = 300
+
 CachedSellersData: SellerData = SellerData()
 
 CachedShipyardInventories = GroupInventory(
-    group_id="41707164", group_name="Shipyard Group", api_key=os.getenv("FIO_API_KEY")
+    group_id="41707164", group_name="Shipyard Group", api_key=os.getenv("FIO_API_KEY", "")
 )
 CachedEv1lInventories = GroupInventory(
     group_id="83373923",
     group_name="Ev1l Group",
-    api_key=os.getenv("FIO_API_KEY"),
+    api_key=os.getenv("FIO_API_KEY", ""),
 )
 ShipPartTickers = (
     "BR1",
@@ -187,12 +217,15 @@ async def updateInventories():
     global CachedEv1lInventories
     global CachedSellersData
 
+    Log.info("Updating inventories")
+
     try:
         async with AsyncClient() as client:
             await asyncio.gather(
                 CachedShipyardInventories.update(client),
                 CachedEv1lInventories.update(client),
                 CachedSellersData.update(client),
+                return_exceptions=True,
             )
     except Exception:
         pass
@@ -200,8 +233,8 @@ async def updateInventories():
 
 async def whohas(
     ctx: Any, ticker: str, shouldReturnAll: bool = False, forceUpdate: bool = False
-) -> list[tuple[str, int]]:
-    Log.info("whohas", ticker)
+) -> tuple[list[tuple[str, int]], datetime | None]:
+    Log.info(f"whohas {ticker}")
 
     # update relevant group inventory
     global CachedShipyardInventories
@@ -223,10 +256,13 @@ async def whohas(
         async with AsyncClient() as client:
             await CachedSellersData.update(client)
 
-    result = inventory.findInInventory(
-        ticker=ticker,
-        sellerData=CachedSellersData,
-        shouldReturnAll=shouldReturnAll,
+    result = (
+        inventory.findInInventory(
+            ticker=ticker,
+            sellerData=CachedSellersData,
+            shouldReturnAll=shouldReturnAll,
+        ),
+        inventory.last_updated,
     )
     # print(str(result))
     print("Full:", str(result))
@@ -235,5 +271,5 @@ async def whohas(
 
 
 async def fetch_inventory_data_periodically():
-    p = Periodic(300, updateInventories)
-    await p.start()
+    p = Periodic(UpdateInterval, updateInventories)
+    await p.start(delay=0)

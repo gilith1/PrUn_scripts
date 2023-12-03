@@ -11,7 +11,7 @@ from typing import Any
 import discord
 from discord.ext import commands
 
-from HAL9666.lib.inventory import fetch_inventory_data_periodically, whohas
+from lib.inventory import fetch_inventory_data_periodically, whohas, UpdateInterval
 
 # from keep_alive_flask import keep_alive
 intents = discord.Intents.default()
@@ -445,11 +445,20 @@ async def whohas_command(ctx: Any, ticker: str, all: str = "", force: str = ""):
         return
 
     shouldReturnAll = all.lower() == "all"
-    forceUpdate = force.lower() == "force" or all.lower() == "force" #  force ends up in "all" if "$whohas FE force"
+    forceUpdate = (
+        force.lower() == "force" or all.lower() == "force"
+    )  #  force ends up in "all" if "$whohas FE force"
 
-    result = await whohas(
-        ctx=ctx, ticker=ticker.upper(), shouldReturnAll=shouldReturnAll, forceUpdate=forceUpdate
+    result, last_updated = await whohas(
+        ctx=ctx,
+        ticker=ticker.upper(),
+        shouldReturnAll=shouldReturnAll,
+        forceUpdate=forceUpdate,
     )
+
+    if last_updated is not None:
+        age = int((datetime.now() - last_updated).total_seconds())
+        seconds_til_refresh = UpdateInterval - age
 
     if len(result) == 0:
         await ctx.reply(f"As far as I know, nobody has {ticker}")
@@ -459,7 +468,12 @@ async def whohas_command(ctx: Any, ticker: str, all: str = "", force: str = ""):
         f"{user} has {amount} {ticker.upper()}" for (user, amount) in result
     ]
     print("Filtered:", str(formattedResult))
-    await ctx.reply("\n".join(formattedResult))
+    last_updated_text = (
+        f"(updated {age} seconds ago, refresh in {seconds_til_refresh}s)"
+        if last_updated is not None
+        else ("There is no data currently. Try adding 'force' to the command")
+    )
+    await ctx.reply(f"{last_updated_text}\n" + "\n".join(formattedResult))
 
 
 @bot.command()
@@ -475,6 +489,7 @@ async def clearchannel(ctx):
 async def main():
     await fetch_inventory_data_periodically()
     await bot.start(os.getenv("DISCORD_TOKEN"))
+
 
 # keep_alive()
 if __name__ == "__main__":
