@@ -164,8 +164,8 @@ def isModeratorRole(member):
 def parseBid(bid):
     result = 0
     multiplier = 1
-    if bid.endswith("mil"):
-        bid = bid.rstrip("mil")
+    if bid.lower().endswith("mil"):
+        bid = bid.lower().rstrip("mil")
         multiplier = 1000000
     elif bid.lower().endswith("k"):
         bid = bid.lower().rstrip("k")
@@ -314,7 +314,6 @@ async def auctionmultistart(
 
 @bot.command()
 async def bid(ctx, bid):
-    global currentAuction
     if ctx.author == bot.user or ctx.author.bot:
         return
     if ctx.channel.name not in ValidChannels:
@@ -359,7 +358,6 @@ async def bid(ctx, bid):
 
 @bot.command()
 async def status(ctx):
-    global currentAuction
     if ctx.author == bot.user or ctx.author.bot:
         return
     if ctx.channel.name not in ValidChannels:
@@ -414,7 +412,6 @@ async def auctionstop(ctx):
 
 @bot.command()
 async def help(ctx):
-    global currentAuction
     if ctx.author == bot.user or ctx.author.bot:
         return
     if ctx.channel.name not in ValidChannels:
