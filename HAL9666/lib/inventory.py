@@ -19,6 +19,37 @@ http_client = AsyncClient()
 
 
 @dataclass
+class UserInventory:
+    user: str
+    ticker: str
+    inventory: list[tuple[str, int]] = field(default_factory=list) # e.g [("UV-351a", 500), ("BEN", 1000)]
+
+    def __post_init__(self) -> None:
+        self.hasBeenFiltered: bool = False
+
+    def filterLocations(self, locations):
+        self.inventory = [x for x in self.inventory if x[0] in locations]
+        self.hasBeenFiltered = True
+
+    def getTotal(self):
+        result = 0
+        for x in self.inventory:
+            result += x[1]
+        return result
+
+    def toStrDetailed(self):
+        locationDetailsList = [f"{amount} {self.ticker} at {location}" for location, amount in self.inventory]
+        details = ", ".join(locationDetailsList)
+        return f"{self.user} has " + details
+
+    def toStrSummed(self):
+        return "{user} has {total} {ticker}".format(user=self.user, total=self.getTotal(), ticker=self.ticker)
+
+    def toStr(self):
+        return self.toStrDetailed() if self.hasBeenFiltered else self.toStrSummed()
+
+
+@dataclass
 class GroupInventory:
     group_id: str
     group_name: str
@@ -78,40 +109,28 @@ class GroupInventory:
         ticker: str,
         sellerData: "SellerData",
         shouldReturnAll: bool = False,
-    ) -> list[tuple[str, int]]:
+    ) -> list[UserInventory]:
         result: list[tuple[str, list[tuple[str, int]]]] = []
         # filter for only ticker we want
         for user, inv in self.inventory.items():
             if ticker in inv:
-                result.append((user, inv[ticker]))
+                result.append(UserInventory(user, ticker, inv[ticker]))
 
         if not shouldReturnAll:
             sellersData = sellerData.get_sellers_for_ticker(ticker)
-            sellers = [s for s in sellersData.keys()]
+            sellers = list(sellersData.keys())
             print("Sellers:", str(sellers))
-            seller_filtered_result = [x for x in result if x[0] in sellers]
+            seller_filtered_result = [x for x in result if x.user in sellers]
 
-            pos_filtered_result: list[tuple[str, list[tuple[str, int]]]] = []
+            #filter by POS, remove UserInventory if empty after filtering
+            for userInv in seller_filtered_result.copy():
+                if len(sellersData[userInv.user]) > 0:
+                    userInv.filterLocations(sellersData[userInv.user])
+                    if userInv.getTotal() <= 0:
+                        seller_filtered_result.remove(userInv)
+            result = seller_filtered_result
 
-            for user, inv_rows in seller_filtered_result:
-                filtered_inv_rows = [
-                    x
-                    for x in inv_rows
-                    if x[0] in sellersData[user] or len(sellersData[user]) == 0
-                ]
-                if len(filtered_inv_rows) > 0:
-                    pos_filtered_result.append((user, filtered_inv_rows))
-
-            result = pos_filtered_result
-
-        summed_inventories: list[tuple[str, int]] = []
-        # sum up amounts from all remaining locations
-        for user, inv_rows in result:
-            amount = sum([x[1] for x in inv_rows])
-            if amount > 0:
-                summed_inventories.append((user, amount))
-
-        return sorted(summed_inventories, key=lambda x: x[1])[::-1]
+        return sorted(result, key=lambda x: x.getTotal())[::-1]
 
 
 class SellerData:
@@ -127,7 +146,7 @@ class SellerData:
             self._seller_sheet_url, follow_redirects=True, timeout=5
         )
         if response.status_code == 307:
-            Log.info(f"Got a temporary rediret")
+            Log.info(f"Got a temporary redirect")
         elif response.status_code == 200:
             self.data = list(csv.DictReader(response.text.split("\r\n")))
             self.last_updated = datetime.now()
@@ -140,16 +159,16 @@ class SellerData:
     def get_sellers_for_ticker(self, ticker: str) -> dict[str, list[str]]:
         result: dict[str, list[str]] = {}
         for row in self.data:
-            pos_list = [x.strip() for x in row.get("POS", "").split(",") if x != ""]
             if row["MAT"] == ticker:
+                pos_list = [x.strip() for x in row.get("POS", "").split(",") if x != ""]
                 result[row["Seller"].upper()] = pos_list
 
         return result
 
 
 UpdateInterval = 300
-
 CachedSellersData: SellerData = SellerData()
+
 
 CachedShipyardInventories = GroupInventory(
     group_id="41707164", group_name="Shipyard Group", api_key=os.getenv("FIO_API_KEY", "")
@@ -234,13 +253,10 @@ async def updateInventories():
 
 async def whohas(
     ctx: Any, ticker: str, shouldReturnAll: bool = False, forceUpdate: bool = False
-) -> tuple[list[tuple[str, int]], datetime | None]:
+) -> tuple[list[UserInventory], datetime | None]:
     Log.info(f"whohas {ticker}")
 
     # update relevant group inventory
-    global CachedShipyardInventories
-    global CachedEv1lInventories
-    global CachedSellersData
     isShipPartTicker = ticker in ShipPartTickers
 
     inventory = CachedShipyardInventories if isShipPartTicker else CachedEv1lInventories
@@ -260,7 +276,7 @@ async def whohas(
     result = (
         inventory.findInInventory(
             ticker=ticker,
-            sellerData=CachedSellersData,
+            sellerData = CachedSellersData,
             shouldReturnAll=shouldReturnAll,
         ),
         inventory.last_updated,
