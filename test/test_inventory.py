@@ -39,7 +39,8 @@ async def test_inventory(mock_seller_data, async_client):
     mock_seller_data.get_sellers_for_ticker = MagicMock(return_value={"Kindling": [], "Felmer": [], "Gilith": []})
 
     inv, last_updated = await whohas(AsyncMock(), "C", forceUpdate=True)
-    assert inv[0] == ("Kindling", 200)
+    assert inv[0].user == "Kindling"
+    assert inv[0].getTotal() == 200
 
     general_csv_stream = create_csv(
         [
@@ -61,8 +62,10 @@ async def test_inventory(mock_seller_data, async_client):
 
     inv, last_updated = await whohas(AsyncMock(), "C", forceUpdate=True)
 
-    assert inv[0] == ("Felmer", 250)
-    assert inv[1] == ("Kindling", 200)
+    assert inv[0].user == "Felmer"
+    assert inv[0].getTotal() == 250
+    assert inv[1].user == "Kindling"
+    assert inv[1].getTotal() == 200
 
     fake_fio_response.status_code = 500
 
@@ -70,30 +73,35 @@ async def test_inventory(mock_seller_data, async_client):
     ctx.reply = AsyncMock()
     inv, last_updated = await whohas(ctx, "C", forceUpdate=True)
 
-    assert inv[0] == ("Felmer", 250)
-    assert inv[1] == ("Kindling", 200)
+    assert inv[0].user == "Felmer"
+    assert inv[0].getTotal() == 250
+    assert inv[1].user == "Kindling"
+    assert inv[1].getTotal() == 200
 
     fake_fio_response.status_code = 200
     fake_fio_response.text = shipyard_csv_stream
     inv, last_updated = await whohas(ctx, "WCB", forceUpdate=True)
 
     assert len(inv) == 1
-    assert inv[0] == ("Felmer", 3)
+    assert inv[0].user == "Felmer"
+    assert inv[0].getTotal() == 3
 
     fake_fio_response.status_code = 500
     inv, last_updated = await whohas(ctx, "C", forceUpdate=True)
 
-    assert inv[0] == ("Felmer", 250)
-    assert inv[1] == ("Kindling", 200)
+    assert inv[0].user == "Felmer"
+    assert inv[0].getTotal() == 250
+    assert inv[1].user == "Kindling"
+    assert inv[1].getTotal() == 200
 
 
 @pytest.mark.asyncio
 @patch("HAL9666.lib.inventory.AsyncClient")
 @patch("HAL9666.lib.inventory.CachedSellersData")
 async def test_pos_filter(mock_seller_data, async_client):
-    # when someone has set POS filter, we should only count the amounts from those locations
+    # when someone has set POS filter, we should only list the amounts from those locations
     seller_data = {
-        "Kindling": ["UV-351a"],
+        "Kindling": ["UV-351a", "KW-688c"],
         "Felmer": ["XG-521b"],
         "Gilith": [],
     }
@@ -114,6 +122,12 @@ async def test_pos_filter(mock_seller_data, async_client):
                 "Ticker": "C",
                 "Amount": "100",
                 "NaturalId": "KW-688c",
+            },
+            {
+                "Username": "Kindling",
+                "Ticker": "C",
+                "Amount": "500",
+                "NaturalId": "elsewhere",
             },
             {
                 "Username": "Gilith",
@@ -142,8 +156,16 @@ async def test_pos_filter(mock_seller_data, async_client):
     inv, last_updated = await whohas(MagicMock(), "C", False, forceUpdate=True)
 
     assert len(inv) == 2
-    assert ("Kindling", 200) in inv
-    assert ("Gilith", 100) in inv
+    assert inv[0].user == "Kindling"
+    assert ("UV-351a", 200) in inv[0].inventory
+    assert ("KW-688c", 100) in inv[0].inventory
+    assert ("elsewhere", 500) not in inv[0].inventory
+    assert inv[0].getTotal() == 300
+    assert inv[1].user == "Gilith"
+    assert inv[1].getTotal() == 100
+
+    assert inv[0].toStr() == "Kindling has 200 C at UV-351a, 100 C at KW-688c"
+    assert inv[1].toStr() == "Gilith has 100 C"
 
 
 @pytest.mark.asyncio

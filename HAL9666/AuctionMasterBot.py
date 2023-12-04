@@ -457,8 +457,9 @@ async def whohas_command(ctx: Any, ticker: str, all: str = "", force: str = ""):
         return
 
     formattedResult = [
-        f"{user} has {amount} {ticker.upper()}" for (user, amount) in result
+        userInv.toStr() for userInv in result
     ]
+
     print("Filtered:", str(formattedResult))
     last_updated_text = (
         f"(updated {age} seconds ago, refresh in {seconds_til_refresh}s)"
