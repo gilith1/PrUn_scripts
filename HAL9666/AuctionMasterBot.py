@@ -386,15 +386,16 @@ async def status(ctx):
         )
     )
     if currentAuction.shipCount > 1:
-        await ctx.send("Current winners:")
+        msgStr = "Current winners:\n"
+        winnersMsgs = []
         for bid in currentAuction.bidHistory[
             : -1 - currentAuction.shipCount : -1
         ]:  # list slicing magic - last shipCount bids, may be less
-            await ctx.send(
-                "{bidder} at {bid}".format(
-                    bidder=bid[1].mention, bid=numberToMilSuffixed(bid[0])
-                )
-            )
+            winnersMsgs.append("{bidder} at {bid}".format(
+                bidder=bid[1].display_name, bid=numberToMilSuffixed(bid[0])
+            ))
+        msgStr += "\n".join(winnersMsgs)
+        await ctx.send(msgStr)
     await printEndTime(ctx)
 
 
