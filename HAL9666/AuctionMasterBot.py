@@ -348,7 +348,7 @@ async def bid(ctx, bid):
                     name=currentAuction.name,
                     bid=numberToMilSuffixed(newBid[0]),
                     amount=numberToMilSuffixed(currentAuction.getMinBid(),
-                    getEndTimeMsg()),
+                    endTime = getEndTimeMsg()),
                 )
             )
     except Exception as ex:
