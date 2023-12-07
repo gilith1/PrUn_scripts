@@ -376,7 +376,6 @@ async def status(ctx):
             )
         )
         return
-    )
     msgStr = "Current bid is {bid}. Min. valid bid is now:\n$bid {amount}".format(
         bid=numberToMilSuffixed(currentAuction.currentBid()[0]),
         amount=numberToMilSuffixed(currentAuction.getMinBid()),
