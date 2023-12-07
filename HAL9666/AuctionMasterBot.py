@@ -208,14 +208,11 @@ async def createAuction(
     )
 
 
-async def printEndTime(ctx):
-    global currentAuction
+def getEndTimeMsg():
     if not currentAuction:
-        return
-    await ctx.send(
-        "The auction for {name} ends on <t:{endTime}:f>".format(
-            name=currentAuction.name, endTime=int(currentAuction.endTime.timestamp())
-        )
+        return ""
+    return "The auction for {name} ends on <t:{endTime}:f>".format(
+        name=currentAuction.name, endTime=int(currentAuction.endTime.timestamp())
     )
 
 
@@ -346,14 +343,14 @@ async def bid(ctx, bid):
         else:  # first bid (or multiauction with additional ships are still available)
             print("1st bid")
             await ctx.send(
-                "{newBidder} bids {bid} for {name}! Min. valid bid is now:\n$bid {amount}".format(
+                "{newBidder} bids {bid} for {name}! Min. valid bid is now:\n$bid {amount}\n{endTime}".format(
                     newBidder=newBid[1].mention,
                     name=currentAuction.name,
                     bid=numberToMilSuffixed(newBid[0]),
-                    amount=numberToMilSuffixed(currentAuction.getMinBid()),
+                    amount=numberToMilSuffixed(currentAuction.getMinBid(),
+                    getEndTimeMsg()),
                 )
             )
-        await printEndTime(ctx)
     except Exception as ex:
         await ctx.reply(ex)
         print(traceback.format_exc())
@@ -379,14 +376,13 @@ async def status(ctx):
             )
         )
         return
-    await ctx.send(
-        "Current bid is {bid}. Min. valid bid is now:\n$bid {amount}".format(
-            bid=numberToMilSuffixed(currentAuction.currentBid()[0]),
-            amount=numberToMilSuffixed(currentAuction.getMinBid()),
-        )
+    )
+    msgStr = "Current bid is {bid}. Min. valid bid is now:\n$bid {amount}".format(
+        bid=numberToMilSuffixed(currentAuction.currentBid()[0]),
+        amount=numberToMilSuffixed(currentAuction.getMinBid()),
     )
     if currentAuction.shipCount > 1:
-        msgStr = "Current winners:\n"
+        msgStr += "\nCurrent winners:\n"
         winnersMsgs = []
         for bid in currentAuction.bidHistory[
             : -1 - currentAuction.shipCount : -1
@@ -395,8 +391,7 @@ async def status(ctx):
                 bidder=bid[1].display_name, bid=numberToMilSuffixed(bid[0])
             ))
         msgStr += "\n".join(winnersMsgs)
-        await ctx.send(msgStr)
-    await printEndTime(ctx)
+    await ctx.send(msgStr + "\n" + getEndTimeMsg())
 
 
 @bot.command()
