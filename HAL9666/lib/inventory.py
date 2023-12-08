@@ -19,7 +19,7 @@ http_client = AsyncClient()
 
 
 @dataclass
-class UserInventory:
+class UserTickerInventory:
     user: str
     ticker: str
     inventory: list[tuple[str, int]] = field(default_factory=list) # e.g [("UV-351a", 500), ("BEN", 1000)]
@@ -27,7 +27,7 @@ class UserInventory:
     def __post_init__(self) -> None:
         self.hasBeenFiltered: bool = False
 
-    def filterLocations(self, locations):
+    def filterLocations(self, locations: list[str]):
         self.inventory = [x for x in self.inventory if x[0] in locations]
         self.hasBeenFiltered = True
 
@@ -109,12 +109,12 @@ class GroupInventory:
         ticker: str,
         sellerData: "SellerData",
         shouldReturnAll: bool = False,
-    ) -> list[UserInventory]:
-        result: list[tuple[str, list[tuple[str, int]]]] = []
+    ) -> list[UserTickerInventory]:
+        result: list[UserTickerInventory] = []
         # filter for only ticker we want
         for user, inv in self.inventory.items():
             if ticker in inv:
-                result.append(UserInventory(user, ticker, inv[ticker]))
+                result.append(UserTickerInventory(user, ticker, inv[ticker]))
 
         if not shouldReturnAll:
             sellersData = sellerData.get_sellers_for_ticker(ticker)
@@ -122,7 +122,7 @@ class GroupInventory:
             print("Sellers:", str(sellers))
             seller_filtered_result = [x for x in result if x.user in sellers]
 
-            #filter by POS, remove UserInventory if empty after filtering
+            #filter by POS, remove UserTickerInventory if empty after filtering
             for userInv in seller_filtered_result.copy():
                 if len(sellersData[userInv.user]) > 0:
                     userInv.filterLocations(sellersData[userInv.user])
@@ -253,7 +253,7 @@ async def updateInventories():
 
 async def whohas(
     ctx: Any, ticker: str, shouldReturnAll: bool = False, forceUpdate: bool = False
-) -> tuple[list[UserInventory], datetime | None]:
+) -> tuple[list[UserTickerInventory], datetime | None]:
     Log.info(f"whohas {ticker}")
 
     # update relevant group inventory
