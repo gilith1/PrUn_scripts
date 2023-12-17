@@ -248,12 +248,13 @@ async def auctionstart(ctx, name, initialPrice, increments, duration=48, extensi
         return
     print("currentAuction:", currentAuction)
     await ctx.reply(
-        "Starting auction: {name}, min. bid is {initialPrice}. Min. bid increments: {increments}. Auction will last for {duration}h, or {extension}h after last bid".format(
+        "Starting auction: {name}, min. bid is {initialPrice}. Min. bid increments: {increments}. Auction will last for {duration}h, or {extension}h after last bid\n{mentionBidders}".format(
             name=currentAuction.name,
             initialPrice=currentAuction.initialPrice,
             increments=currentAuction.increments,
             duration=currentAuction.duration,
             extension=currentAuction.extension,
+            mentionBidders=discord.utils.get(ctx.author.guild.roles, name="bidders").mention
         )
     )
 
@@ -301,13 +302,14 @@ async def auctionmultistart(
         return
     print("currentAuction:", currentAuction)
     await ctx.reply(
-        "Starting auction: {name}. {shipCount} ships are available, and **{shipCount} highest bids win!**\nMin. bid is {initialPrice}. Min. bid increments: {increments}. Auction will last for {duration}h, or {extension}h after last bid.\nYou **can** buy multiple ships!".format(
+        "Starting auction: {name}. {shipCount} ships are available, and **{shipCount} highest bids win!**\nMin. bid is {initialPrice}. Min. bid increments: {increments}. Auction will last for {duration}h, or {extension}h after last bid.\nYou **can** buy multiple ships!\n{mentionBidders}".format(
             name=currentAuction.name,
             shipCount=shipCount,
             initialPrice=currentAuction.initialPrice,
             increments=currentAuction.increments,
             duration=currentAuction.duration,
             extension=currentAuction.extension,
+            mentionBidders=discord.utils.get(ctx.author.guild.roles, name="bidders").mention
         )
     )
 
@@ -350,6 +352,12 @@ async def bid(ctx, bid):
                     endTime = getEndTimeMsg(),
                 )
             )
+        #try to assign bidder role
+        if ctx.me.guild_permissions.manage_roles:
+            bidderRole = discord.utils.get(ctx.author.guild.roles, name="bidders")
+            if bidderRole not in ctx.author.roles:
+                print("Assigning bidder role to", ctx.author)
+                await ctx.author.add_roles(bidderRole)
     except Exception as ex:
         await ctx.reply(ex)
         print(traceback.format_exc())
