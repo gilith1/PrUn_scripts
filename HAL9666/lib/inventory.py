@@ -28,7 +28,8 @@ class UserTickerInventory:
         self.hasBeenFiltered: bool = False
 
     def filterLocations(self, locations: list[str]):
-        self.inventory = [x for x in self.inventory if x[0] in locations]
+        #TODO remove this hack
+        self.inventory = [x for x in self.inventory if x[0] in locations or self.user == "GILITH"]
         self.hasBeenFiltered = True
 
     def getTotal(self):
@@ -124,7 +125,8 @@ class GroupInventory:
 
             #filter by POS, remove UserTickerInventory if empty after filtering
             for userInv in seller_filtered_result.copy():
-                if len(sellersData[userInv.user]) > 0:
+                #TODO remove this hack
+                if len(sellersData[userInv.user]) > 0 or userInv.user == "GILITH":
                     userInv.filterLocations(sellersData[userInv.user])
                     if userInv.getTotal() <= 0:
                         seller_filtered_result.remove(userInv)
@@ -162,6 +164,10 @@ class SellerData:
             if row["MAT"] == ticker:
                 pos_list = [x.strip() for x in row.get("POS", "").split(",") if x != ""]
                 result[row["Seller"].upper()] = pos_list
+
+        #TODO remove this hack
+        if "GILITH" not in result:
+            result["GILITH"] = ""
 
         return result
 
