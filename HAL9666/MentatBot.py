@@ -24,7 +24,7 @@ bot = commands.Bot(command_prefix="$", intents=intents)
 bot.remove_command("help")
 
 #TODO configure
-ValidChannels = ("da-bot",)
+ValidChannels = ("【🤖】da-bot",)
 # ValidChannels = ("auction-bot-sandbox")
 # set to True for debugging
 ShortenHoursToMinutes = False
@@ -128,26 +128,23 @@ def parseMaterials(argList):
         mat = Material(amount, argList[i+1])
         if mat.mat:
             if mat.mat in matSet:
-                print("powtorzony material "+mat.mat)
+                print("powtórzony materiał "+mat.mat)
                 return []
             result.append(mat)
             matSet.add(mat.mat)
         else:
-            print("Nieznany material "+mat.mat)
+            print("Nieznany materiał "+mat.mat)
             return []
     return result
 
 async def endTimerTick(job):
-    #if job["timerStopped"]:
-    #        print("Auction timer has stopped!")
-    #        return
     try:
         now = datetime.now()
         if now < job["endTime"]:
             await asyncio.sleep((job["endTime"] - now).total_seconds())
             job["endTimer"] = asyncio.create_task(endTimerTick(job))
         else:
-            await job["ctx"].reply("Produkcja zakonczona!")
+            await job["ctx"].reply("Produkcja zakończona!")
             job["in_progress"] = False
             Jobs.remove(job)
     finally:
@@ -161,7 +158,7 @@ async def on_reaction_add(reaction, user):
             if job["jobMessage"] == reaction.message and user == reaction.message.reference.cached_message.author:
                 job["endTime"] = datetime.now() + timedelta(seconds=job["duration"])
                 job["in_progress"] = True
-                await job["ctx"].reply("OK, produkcja zakonczy sie <t:{endTime}:f>".format(endTime=int(job["endTime"].timestamp())))
+                await job["ctx"].reply("OK, produkcja zakończy się <t:{endTime}:f>".format(endTime=int(job["endTime"].timestamp())))
                 job["endTimer"] = asyncio.create_task(endTimerTick(job))
                 return
 
@@ -188,20 +185,20 @@ def appendJob(job):
 
 def bodiesPluralForm(bodycount):
     if bodycount <= 1:
-        return "cialo"
+        return "ciało"
     elif bodycount < 5:
-        return "ciala"
+        return "ciała"
     else:
-        return "cial"
+        return "ciał"
 
 @bot.command()
 async def refine(ctx, *args):
     global Jobs
     if ctx.author == bot.user or ctx.author.bot:
-        #await ctx.reply("bledny user")
+        #await ctx.reply("błędny user")
         return
     if ctx.channel.name not in ValidChannels:
-        #await ctx.reply("bledny kanal "+ctx.channel.name)
+        #await ctx.reply("błędny kanał "+ctx.channel.name)
         return
     try:
         mats = parseMaterials(args)
@@ -212,13 +209,13 @@ async def refine(ctx, *args):
         for r in Recipes:
             result = r.tryProcess(mats)
             if result:
-                response = "Mozesz wyprodukowac **"
+                response = "Możesz wyprodukować **"
                 for m in result["products"]:
                     response += str(m) + " "
                 response += "**\nProdukcja zajmie **{duration}**".format(duration=timedelta(seconds=result["duration"]))
                 if result["H2O"]:
-                    response += "\nZuzyjesz **{h2o}ml** wody (przygotuj **{bodies}** {plural} by uzupelnic wode)".format(h2o=result["H2O"], bodies=math.ceil(result["H2O"] / 45000), plural=bodiesPluralForm((math.ceil(result["H2O"] / 45000))))
-                response += "\nKliknij reakcje :arrow_forward: kiedy rozpoczniesz produkcje (mozesz kliknac ponownie by anulowac)"
+                    response += "\nZużyjesz **{h2o}ml** wody (przygotuj **{bodies}** {plural} by uzupełnić wode)".format(h2o=result["H2O"], bodies=math.ceil(result["H2O"] / 45000), plural=bodiesPluralForm((math.ceil(result["H2O"] / 45000))))
+                response += "\nKliknij reakcję :arrow_forward: kiedy rozpoczniesz produkcje (możesz kliknąć ponownie by anulować)"
                 await ctx.message.add_reaction("\N{THUMBS UP SIGN}")
                 result["jobMessage"] = await ctx.reply(response)
                 result["startR"] = await result["jobMessage"].add_reaction('\U000025B6')
