@@ -39,13 +39,13 @@ matSynonyms = {
         "PLAST": ("PLAST", "PL", "Plastanium Ingot"),
         "SM": ("SM", "Spice Melange"),
         "SRES": ("SR", "SRES", "Spice Residue"),
-        "ALU": {"ALU", "AL", "Aluminium"},
-        "ALO": {"ALO", "Aluminium Ore"},
-        "DUR": {"DUR", "D", "Duraluminium Ingot"},
-        "JAS": {"JAS", "J", "Jasmium"},
-        "COB": {"COB", "Cobalt Paste"},
-        "ERY": {"ERY", "ER", "E", "EC", "Erythrite Crystal"},
-        "H2O": {"H2O", "WATER", "woda"}
+        "ALU": ("ALU", "AL", "Aluminium"),
+        "ALO": ("ALO", "Aluminium Ore"),
+        "DUR": ("DUR", "D", "Duraluminium Ingot"),
+        "JAS": ("JAS", "J", "Jasmium"),
+        "COB": ("COB", "Cobalt Paste"),
+        "ERY": ("ERY", "ER", "E", "EC", "Erythrite Crystal"),
+        "H2O": ("H2O", "WATER", "woda")
 }
 
 def parseAmount(amount):
