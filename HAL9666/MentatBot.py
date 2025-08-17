@@ -39,6 +39,12 @@ matSynonyms = {
         "PLAST": ("PLAST", "PL", "Plastanium Ingot"),
         "SM": ("SM", "Spice Melange"),
         "SRES": ("SR", "SRES", "Spice Residue"),
+        "ALU": {"ALU", "AL", "Aluminium"},
+        "ALO": {"ALO", "Aluminium Ore"},
+        "DUR": {"DUR", "D", "Duraluminium Ingot"},
+        "JAS": {"JAS", "J", "Jasmium"},
+        "COB": {"COB", "Cobalt Paste"},
+        "ERY": {"ERY", "ER", "E", "EC", "Erythrite Crystal"},
         "H2O": {"H2O", "WATER", "woda"}
 }
 
@@ -114,6 +120,15 @@ Recipes = (
     ),
     Recipe((Material(10000, "SSAND"),),
         (Material(200, "SM"), Material(1000, "SRES")), 2700, 75000
+    ),
+    Recipe((Material(1, "ALU"), Material(3, "JAS")),
+        (Material(1, "DUR"),), 4, 500
+    ),
+    Recipe((Material(4, "ALO"),),
+        (Material(1, "ALU"),), 20, 200
+    ),
+    Recipe((Material(2, "ERY"),),
+        (Material(1, "COB"),), 10, 75
     )
 )
 
