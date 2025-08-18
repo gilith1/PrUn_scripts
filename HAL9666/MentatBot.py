@@ -94,6 +94,7 @@ class Recipe:
         
     def tryProcess(self, materials):
         totalBatches = 1000000
+        remaining = []
         print(self.ingredients)
         for i in self.ingredients:
             batches = 0
@@ -105,9 +106,19 @@ class Recipe:
                 return None
             totalBatches = min(totalBatches, batches)
             print(str(m), totalBatches, self.products[0].amount)
+
+        for m in materials:
+            amountRemaining = m.amount
+            for i in self.ingredients:
+                if i.mat == m.mat:
+                    amountRemaining = amountRemaining - i.amount * totalBatches
+                    break
+            if amountRemaining > 0:
+                remaining.append(Material(amountRemaining, m.mat))
         
         result = {"products": (Material(p.amount * totalBatches, p.mat) for p in self.products),
                   "duration": self.batchTime * totalBatches,
+                  "remaining": remaining,
                   "H2O": self.h2o * totalBatches}
         return result
         
@@ -229,7 +240,12 @@ async def refine(ctx, *args):
                     response += str(m) + " "
                 response += "**\nProdukcja zajmie **{duration}**".format(duration=timedelta(seconds=result["duration"]))
                 if result["H2O"]:
-                    response += "\nZużyjesz **{h2o}ml** wody (przygotuj **{bodies}** {plural} by uzupełnić wode)".format(h2o=result["H2O"], bodies=math.ceil(result["H2O"] / 45000), plural=bodiesPluralForm((math.ceil(result["H2O"] / 45000))))
+                    response += "\nZużyjesz **{h2o}ml** wody (przygotuj **{bodies}** {plural} by uzupełnić wodę)".format(h2o=result["H2O"], bodies=math.ceil(result["H2O"] / 45000), plural=bodiesPluralForm((math.ceil(result["H2O"] / 45000))))
+                if result["remaining"]:
+                    response += "\nZostanie ci jeszcze **"
+                    for m in result["remaining"]:
+                        response += str(m) + " "
+                    response += "**"
                 response += "\nKliknij reakcję :arrow_forward: kiedy rozpoczniesz produkcje (możesz kliknąć ponownie by anulować)"
                 await ctx.message.add_reaction("\N{THUMBS UP SIGN}")
                 result["jobMessage"] = await ctx.reply(response)
